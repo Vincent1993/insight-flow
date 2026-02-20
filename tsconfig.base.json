@@ -3,6 +3,24 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@insight-flow/protocol": [
+        "packages/protocol/src/index.ts"
+      ],
+      "@insight-flow/core": [
+        "packages/core/src/index.ts"
+      ],
+      "@insight-flow/core/*": [
+        "packages/core/src/*"
+      ],
+      "@insight-flow/llm-connectors": [
+        "packages/llm-connectors/src/index.ts"
+      ],
+      "@insight-flow/llm-connectors/*": [
+        "packages/llm-connectors/src/*"
+      ]
+    },
     "strict": true,
     "declaration": true,
     "declarationMap": true,
