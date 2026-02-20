@@ -1,9 +1,10 @@
 import { createComputeEngine } from "@insight-flow/compute-engine";
-import { createInsightCore } from "@insight-flow/core";
-import { createPipeline } from "@insight-flow/data-cleaner";
+import { createInsightCore, type ModuleConversationState } from "@insight-flow/core";
+import { createAdapterRegistry, createPipeline } from "@insight-flow/data-cleaner";
 import { normalize, piiMask, sanitize } from "@insight-flow/data-cleaner/plugins";
 import { collectStreamResult, type ChatChunk, type InsightChatConnector } from "@insight-flow/llm-connectors";
 import type { InsightRecord, PromptMode } from "@insight-flow/protocol";
+import { createDemoAdapters, type AdaptedModuleData } from "./adapters.js";
 
 interface ModuleCard {
   id: string;
@@ -20,6 +21,12 @@ interface ChatInput {
   userInput: string;
   promptMode?: PromptMode;
   overridePrompt?: string;
+}
+
+interface RegisterMetadata {
+  adapterId?: string;
+  schemaId?: string;
+  schemaVersion?: string;
 }
 
 function createMockConnector(): InsightChatConnector {
@@ -41,6 +48,7 @@ function createMockConnector(): InsightChatConnector {
 
 export class HostDemoRuntime {
   private readonly pageModules = new Map<string, ModuleCard>();
+  private readonly adapters = createAdapterRegistry(createDemoAdapters());
   private readonly core = createInsightCore({
     appId: "host-demo",
     channel: "native",
@@ -67,7 +75,7 @@ export class HostDemoRuntime {
   /**
    * 注册模块并绑定页面回写能力。
    */
-  async registerModule(module: ModuleCard): Promise<void> {
+  async registerModule(module: ModuleCard, metadata?: RegisterMetadata): Promise<void> {
     this.pageModules.set(module.id, module);
     const cleaned = (await this.cleaner.run(
       {
@@ -88,7 +96,17 @@ export class HostDemoRuntime {
     const record: InsightRecord = {
       identity: { id: module.id, type: "metric-card", page: "home" },
       semantics: { domain: "sales", metric: "revenue", dimensions: ["region"] },
-      stateTrace: { filters: module.filters, granularity: "day" },
+      stateTrace: {
+        filters: module.filters,
+        granularity: "day",
+        ext: metadata
+          ? {
+              adapterId: metadata.adapterId,
+              schemaId: metadata.schemaId,
+              schemaVersion: metadata.schemaVersion
+            }
+          : undefined
+      },
       promptPreset: {
         system: "你是业务分析助手，请先引用确定性统计量再给结论。",
         task: `分析模块 ${module.title} 的指标变化并给出建议。`,
@@ -135,8 +153,39 @@ export class HostDemoRuntime {
     });
   }
 
+  /**
+   * 注入异构数据并通过 Adapter 自动适配后注册。
+   */
+  async registerInjectedModule(rawInput: unknown, adapterId?: string): Promise<void> {
+    const adapted = await this.adapters.adapt<AdaptedModuleData>(rawInput, {
+      adapterId,
+      includeRaw: true
+    });
+    await this.registerModule(
+      {
+        id: adapted.data.id,
+        title: adapted.data.title,
+        points: adapted.data.points,
+        filters: adapted.data.filters
+      },
+      {
+        adapterId: adapted.adapterId,
+        schemaId: adapted.schema.id,
+        schemaVersion: adapted.schema.version
+      }
+    );
+  }
+
   discoverModules(): InsightRecord[] {
     return this.core.list();
+  }
+
+  subscribeSelection(cb: (records: InsightRecord[]) => void): () => void {
+    return this.core.subscribeSelection(cb);
+  }
+
+  subscribeConversation(cb: (state: Record<string, ModuleConversationState>) => void): () => void {
+    return this.core.subscribeConversation(cb);
   }
 
   selectModule(identityId: string): void {
@@ -212,11 +261,24 @@ export class HostDemoRuntime {
 export async function runDemoFlow(): Promise<void> {
   const runtime = new HostDemoRuntime();
 
-  await runtime.registerModule({
-    id: "revenue-card",
-    title: "本周收入",
-    points: [100, 120, 115, 130, 150],
+  await runtime.registerInjectedModule({
+    moduleId: "revenue-card",
+    moduleName: "本周收入",
+    series: [100, 120, 115, 130, 150],
     filters: ["region=APAC"]
+  });
+
+  await runtime.registerInjectedModule({
+    id: "order-trend",
+    title: "订单趋势",
+    rows: [
+      { x: "Mon", y: 20 },
+      { x: "Tue", y: 22 },
+      { x: "Wed", y: 28 }
+    ],
+    context: {
+      filters: ["channel=online"]
+    }
   });
 
   runtime.selectModule("revenue-card");

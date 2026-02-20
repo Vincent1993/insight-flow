@@ -12,6 +12,7 @@
 4. 计算可按数据规模自动切换 JS / Worker / WASM
 5. 选中模块后可在侧边栏发起 Dify Chat
 6. 每个模块支持内置提示词，并允许用户追加或替换
+7. 异构注入数据可通过 Schema Adapter 自动适配
 
 ## 2. 包与职责
 
@@ -103,6 +104,17 @@ const unsubscribe = insightCore.subscribeSelection((selected) => {
 });
 ```
 
+### 步骤 5.1：通过 Adapter 适配异构注入数据（推荐）
+
+```ts
+import { createAdapterRegistry } from "@insight-flow/data-cleaner/adapters";
+
+const adapters = createAdapterRegistry([metricSeriesAdapter, trendRowsAdapter]);
+
+const adapted = await adapters.adapt(rawInput);
+// adapted.schema.id / adapted.schema.version 可写入 stateTrace.ext 做治理追踪
+```
+
 ### 步骤 6：配置 Dify Chat 连接器
 
 ```ts
@@ -132,6 +144,21 @@ const result = await difyChat.streamChat({
 
 - `append`：`内置提示词 + 用户新增提示词 + 当前会话问题`
 - `replace`：`用户替换提示词 + 当前会话问题`（不使用内置提示词）
+
+会话回写建议：
+
+```ts
+core.insertAiReply(identityId, {
+  sessionId: result.sessionId,
+  reply: result.reply
+});
+```
+
+页面点击更新建议：
+
+```ts
+await core.requestModuleUpdate(identityId, nextPayload);
+```
 
 ## 4. 非 React 接入（Vanilla）
 
@@ -195,6 +222,9 @@ wrapElement(el, {
 - [ ] 脱敏字段在分析链路中不可逆明文外泄
 - [ ] 选中模块后能直接在侧边栏与 Dify 对话
 - [ ] 用户可切换提示词模式（append/replace）且结果符合预期
+- [ ] 异构数据至少有一个 Adapter 可成功适配并注册
+- [ ] 会话 sessionId 与 AI 回复可回写到页面模块
+- [ ] 点击“更新”后模块数据与统计量能刷新
 
 ## 8. 常见问题
 

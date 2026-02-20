@@ -9,6 +9,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "default": "./dist/adapters/index.js"
+    },
     "./plugins": {
       "types": "./dist/plugins/index.d.ts",
       "default": "./dist/plugins/index.js"

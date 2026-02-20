@@ -66,6 +66,8 @@ insight-flow/
 │  │
 │  ├─ data-cleaner/                      # 独立数据清洗功能包
 │  │  ├─ src/
+│  │  │  ├─ adapters/
+│  │  │  │  └─ registry.ts              # Schema Adapter 注册与适配
 │  │  │  ├─ pipeline/
 │  │  │  │  └─ createPipeline.ts        # 清洗管线编排
 │  │  │  ├─ plugins/
@@ -169,6 +171,11 @@ insight-flow/
 4. dedupe（去重）
 
 可按业务场景自定义顺序或关闭某些步骤，满足“轻/重模式”。
+
+另外支持 `Schema Adapter`：
+
+- 异构注入数据先通过 Adapter 适配成统一结构
+- Adapter 会产出 `schema.id/version`，用于数据治理与审计追踪
 
 ### 3.3 大数据量计算策略（JS / Worker / WASM）
 

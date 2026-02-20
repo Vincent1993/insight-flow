@@ -1,3 +1,8 @@
+export type {
+  AdaptedPayload,
+  DataAdapter,
+  DataSchemaDescriptor
+} from "./insight-schema/adapter.js";
 export type { EdgeStats } from "./insight-schema/edge-stats.js";
 export type { Identity } from "./insight-schema/identity.js";
 export type { PromptMode, PromptOverride, PromptPreset } from "./insight-schema/prompt.js";

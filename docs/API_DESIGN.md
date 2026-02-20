@@ -67,6 +67,19 @@ export interface InsightRecord {
   edgeStats?: EdgeStats;
   timestamp: number;
 }
+
+export interface DataSchemaDescriptor {
+  id: string;
+  version: string;
+  description?: string;
+}
+
+export interface DataAdapter<TInput = unknown, TOutput = unknown> {
+  id: string;
+  schema: DataSchemaDescriptor;
+  canAdapt(input: unknown): input is TInput;
+  adapt(input: TInput): TOutput | Promise<TOutput>;
+}
 ```
 
 ## 3. Core API（@insight-flow/core）
@@ -106,6 +119,23 @@ interface InsightCore {
   setPromptOverride(identityId: string, override: PromptOverride): void;
   clearPromptOverride(identityId: string): void;
   getEffectivePrompt(identityId: string, userInput: string): string;
+
+  bindModuleView(identityId: string, binding: {
+    applyChatPatch?: (patch: {
+      sessionId: string;
+      reply: string;
+      updatedAt: number;
+    }) => void;
+    requestDataUpdate?: () => Promise<unknown> | unknown;
+  }): () => void;
+
+  insertAiReply(identityId: string, insertion: {
+    sessionId: string;
+    reply: string;
+    updatedAt?: number;
+  }): void;
+
+  requestModuleUpdate(identityId: string, nextPayload?: unknown): Promise<void>;
 }
 ```
 
@@ -177,7 +207,28 @@ interface CleanerPipeline {
 function createPipeline(plugins?: CleanerPlugin[]): CleanerPipeline;
 ```
 
-### 4.3 内置插件建议
+### 4.3 Adapter Registry（异构数据适配）
+
+```ts
+interface AdapterRegistry {
+  register(adapter: DataAdapter): void;
+  unregister(adapterId: string): void;
+  list(): DataAdapter[];
+  adapt<TOutput = unknown>(input: unknown, options?: {
+    adapterId?: string;
+    includeRaw?: boolean;
+  }): Promise<{
+    adapterId: string;
+    schema: DataSchemaDescriptor;
+    data: TOutput;
+    raw?: unknown;
+  }>;
+}
+
+function createAdapterRegistry(initialAdapters?: DataAdapter[]): AdapterRegistry;
+```
+
+### 4.4 内置插件建议
 
 - `normalize(options)`
 - `sanitize(options)`
@@ -302,6 +353,8 @@ interface InsightEvent<T = unknown> {
 新增事件建议：
 
 - `insight:prompt-override-changed`
+- `insight:ai-reply-inserted`
+- `insight:module-update-requested`
 - `insight:chat-started`
 - `insight:chat-finished`
 
@@ -313,6 +366,8 @@ interface InsightEvent<T = unknown> {
 | IF-CORE-002 | record 不符合协议 | 校验失败并丢弃 |
 | IF-PROMPT-001 | 模块缺少 promptPreset | 阻止注册并提示补全 |
 | IF-PROMPT-002 | promptMode 非法 | 回退到 append |
+| IF-ADAPTER-001 | 指定 adapter 不存在 | 终止适配并提示配置错误 |
+| IF-ADAPTER-002 | 输入无法被任何 adapter 处理 | 拒绝注册并提示补充 schema |
 | IF-CLEAN-001 | 清洗插件执行失败 | 跳过插件并记录日志 |
 | IF-COMPUTE-001 | Worker 初始化失败 | 降级 JS 模式 |
 | IF-COMPUTE-002 | WASM 加载失败 | 降级 Worker/JS |
