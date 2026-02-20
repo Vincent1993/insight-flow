@@ -113,12 +113,6 @@ insight-flow/
 │     ├─ src/
 │     └─ package.json
 │
-├─ services/
-│  ├─ api-gateway/                       # BFF：鉴权、租户、审计
-│  ├─ feishu-docx-writer/                # Docx 写入（异步批处理 + 限流）
-│  ├─ callback-handler/                  # 卡片回调幂等 + 回填
-│  └─ state-replay/                      # AppLink 状态还原
-│
 ├─ templates/
 │  └─ feishu-card/
 │
@@ -131,7 +125,9 @@ insight-flow/
 ├─ docs/
 │  ├─ architecture/
 │  ├─ milestones/
-│  └─ adr/
+│  ├─ adr/
+│  ├─ INTEGRATION_GUIDE.md               # 接入说明
+│  └─ API_DESIGN.md                      # API 设计
 │
 ├─ .github/workflows/
 ├─ package.json
@@ -201,17 +197,16 @@ insight-flow/
 ### M3（飞书闭环）
 - `packages/markdown-block-mapper`
 - `packages/feishu-client`
-- `services/feishu-docx-writer`
-- `services/callback-handler`
-- `services/state-replay`
+- `templates/feishu-card`
+- 文档写入/回调/状态回放服务先不内建，按业务阶段外置实现
 
 ## 5. 关键边界建议（更新版）
 
 1. `protocol` 是跨端契约源头，严格语义化版本管理。
 2. `core` 只做发现/分发/调度，不内置任何 AI 平台 SDK。
-3. `data-cleaner` 与 `compute-engine` 均可被 `core`、`sidebar-ui`、后端服务单独复用。
+3. `data-cleaner` 与 `compute-engine` 均可被 `core`、`sidebar-ui`、外部服务单独复用。
 4. `llm-connectors` 是可插拔扩展层，可引入 Dify，但不是主干依赖。
-5. 飞书链路保持在 `packages/feishu-client + services/*`，避免污染前端核心包。
+5. 飞书链路在当前阶段只保留 `packages/feishu-client` 与模板资产；服务端能力后续按需追加。
 
 ## 6. 第一阶段最小可运行切片（推荐）
 
@@ -228,3 +223,9 @@ insight-flow/
 - 任意组件按协议注册可被发现
 - 数据清洗可插拔
 - 大数据量下可平滑切换 Worker，不阻塞主线程
+
+## 7. 文档交付（当前版本）
+
+1. `docs/PROJECT_STRUCTURE.md`：项目结构与里程碑映射
+2. `docs/INTEGRATION_GUIDE.md`：宿主系统与插件接入说明
+3. `docs/API_DESIGN.md`：核心 API、数据清洗与计算引擎接口设计
