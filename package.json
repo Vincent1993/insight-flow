@@ -1,0 +1,14 @@
+{
+  "name": "insight-flow",
+  "private": true,
+  "version": "0.1.0",
+  "description": "InsightFlow protocol-driven analysis foundation",
+  "packageManager": "pnpm@10.6.0",
+  "scripts": {
+    "typecheck": "pnpm -r --if-present typecheck",
+    "build": "pnpm -r --if-present build"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

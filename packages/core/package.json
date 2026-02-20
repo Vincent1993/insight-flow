@@ -1,0 +1,35 @@
+{
+  "name": "@insight-flow/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./wrappers/react": {
+      "types": "./dist/wrappers/react/index.d.ts",
+      "default": "./dist/wrappers/react/index.js"
+    },
+    "./wrappers/vanilla": {
+      "types": "./dist/wrappers/vanilla/index.d.ts",
+      "default": "./dist/wrappers/vanilla/index.js"
+    },
+    "./prompt": {
+      "types": "./dist/prompt/index.d.ts",
+      "default": "./dist/prompt/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@insight-flow/protocol": "workspace:*"
+  }
+}
