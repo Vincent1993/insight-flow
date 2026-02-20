@@ -19,6 +19,18 @@
       ],
       "@insight-flow/llm-connectors/*": [
         "packages/llm-connectors/src/*"
+      ],
+      "@insight-flow/data-cleaner": [
+        "packages/data-cleaner/src/index.ts"
+      ],
+      "@insight-flow/data-cleaner/*": [
+        "packages/data-cleaner/src/*"
+      ],
+      "@insight-flow/compute-engine": [
+        "packages/compute-engine/src/index.ts"
+      ],
+      "@insight-flow/compute-engine/*": [
+        "packages/compute-engine/src/*"
       ]
     },
     "strict": true,

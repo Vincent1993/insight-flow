@@ -12,6 +12,8 @@ export const INSIGHT_EVENTS = {
   ITEM_UNREGISTERED: "insight:item-unregistered",
   SELECTION_CHANGED: "insight:selection-changed",
   PROMPT_OVERRIDE_CHANGED: "insight:prompt-override-changed",
+  AI_REPLY_INSERTED: "insight:ai-reply-inserted",
+  MODULE_UPDATE_REQUESTED: "insight:module-update-requested",
   CHAT_STARTED: "insight:chat-started",
   CHAT_FINISHED: "insight:chat-finished"
 } as const;

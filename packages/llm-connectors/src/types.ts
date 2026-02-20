@@ -11,6 +11,7 @@ export interface ChatRequest {
 export interface ChatChunk {
   text: string;
   done?: boolean;
+  sessionId?: string;
   usage?: {
     promptTokens?: number;
     completionTokens?: number;

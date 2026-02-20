@@ -4,14 +4,42 @@ import { DiscoveryChannel } from "./runtime/discovery.js";
 import { InsightMessenger } from "./runtime/messenger.js";
 import { InsightRegistry } from "./runtime/registry.js";
 import { StateBus } from "./runtime/state-bus.js";
-import type { CreateCoreOptions, InsightCore } from "./types.js";
+import type {
+  AiReplyInsertion,
+  CreateCoreOptions,
+  InsightCore,
+  ModuleConversationState,
+  ModuleViewBinding
+} from "./types.js";
+
+function mergePayloadWithConversation(
+  payload: unknown,
+  conversation: ModuleConversationState
+): unknown {
+  const patch = {
+    __insightChat: conversation
+  };
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    return {
+      ...(payload as Record<string, unknown>),
+      ...patch
+    };
+  }
+  return {
+    value: payload,
+    ...patch
+  };
+}
 
 class InsightCoreRuntime implements InsightCore {
   private readonly registry = new InsightRegistry();
   private readonly selectedIds = new Set<string>();
   private readonly promptOverrides = new Map<string, PromptOverride>();
+  private readonly moduleViewBindings = new Map<string, ModuleViewBinding>();
+  private readonly conversations = new Map<string, ModuleConversationState>();
   private readonly selectionBus = new StateBus<InsightRecord[]>([]);
   private readonly registryBus = new StateBus<InsightRecord[]>([]);
+  private readonly conversationBus = new StateBus<Record<string, ModuleConversationState>>({});
   private readonly messenger = new InsightMessenger();
   private readonly discovery: DiscoveryChannel;
   private readonly appId: string;
@@ -32,8 +60,11 @@ class InsightCoreRuntime implements InsightCore {
     this.registry.remove(identityId);
     this.selectedIds.delete(identityId);
     this.promptOverrides.delete(identityId);
+    this.moduleViewBindings.delete(identityId);
+    this.conversations.delete(identityId);
     this.publishRegistry();
     this.publishSelection();
+    this.publishConversation();
     this.emit(INSIGHT_EVENTS.ITEM_UNREGISTERED, { identityId });
   }
 
@@ -134,6 +165,81 @@ class InsightCoreRuntime implements InsightCore {
     });
   }
 
+  bindModuleView(identityId: string, binding: ModuleViewBinding): () => void {
+    if (!this.registry.has(identityId)) {
+      throw new Error(`IF-CORE-002: cannot bind view for unknown record (${identityId})`);
+    }
+    this.moduleViewBindings.set(identityId, binding);
+    return () => {
+      this.moduleViewBindings.delete(identityId);
+    };
+  }
+
+  insertAiReply(identityId: string, insertion: AiReplyInsertion): void {
+    const record = this.registry.get(identityId);
+    if (!record) {
+      throw new Error(`IF-CORE-002: cannot insert ai reply for unknown record (${identityId})`);
+    }
+    if (!insertion.sessionId?.trim() || !insertion.reply?.trim()) {
+      throw new Error("IF-CHAT-004: sessionId and reply are required");
+    }
+
+    const conversation: ModuleConversationState = {
+      sessionId: insertion.sessionId,
+      reply: insertion.reply,
+      updatedAt: insertion.updatedAt ?? Date.now()
+    };
+    this.conversations.set(identityId, conversation);
+
+    const binding = this.moduleViewBindings.get(identityId);
+    binding?.applyChatPatch?.(conversation);
+
+    this.update(identityId, {
+      payload: mergePayloadWithConversation(record.payload, conversation)
+    });
+    this.publishConversation();
+    this.emit(INSIGHT_EVENTS.AI_REPLY_INSERTED, {
+      identityId,
+      conversation
+    });
+  }
+
+  getConversation(identityId: string): ModuleConversationState | undefined {
+    return this.conversations.get(identityId);
+  }
+
+  subscribeConversation(cb: (state: Record<string, ModuleConversationState>) => void): () => void {
+    return this.conversationBus.subscribe(cb);
+  }
+
+  async requestModuleUpdate(identityId: string, nextPayload?: unknown): Promise<void> {
+    const record = this.registry.get(identityId);
+    if (!record) {
+      throw new Error(`IF-CORE-002: cannot request update for unknown record (${identityId})`);
+    }
+
+    if (nextPayload !== undefined) {
+      this.update(identityId, {
+        payload: nextPayload
+      });
+    }
+
+    const binding = this.moduleViewBindings.get(identityId);
+    if (binding?.requestDataUpdate) {
+      const result = await binding.requestDataUpdate();
+      if (result !== undefined) {
+        this.update(identityId, {
+          payload: result
+        });
+      }
+    }
+
+    this.emit(INSIGHT_EVENTS.MODULE_UPDATE_REQUESTED, {
+      identityId,
+      timestamp: Date.now()
+    });
+  }
+
   private publishRegistry(): void {
     const next = this.registry.list();
     this.registryBus.publish(next);
@@ -146,6 +252,11 @@ class InsightCoreRuntime implements InsightCore {
 
     this.selectionBus.publish(selected);
     this.emit(INSIGHT_EVENTS.SELECTION_CHANGED, selected);
+  }
+
+  private publishConversation(): void {
+    const snapshot = Object.fromEntries(this.conversations.entries());
+    this.conversationBus.publish(snapshot);
   }
 
   private emit<T>(eventName: InsightEventName, payload: T): void {

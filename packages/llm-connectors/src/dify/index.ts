@@ -11,6 +11,7 @@ export interface DifyConnectorConfig {
 interface DifyStreamEvent {
   event?: string;
   answer?: string;
+  conversation_id?: string;
   metadata?: {
     usage?: {
       prompt_tokens?: number;
@@ -62,6 +63,7 @@ async function* streamFromResponse(response: Response): AsyncGenerator<ChatChunk
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let sessionId: string | undefined;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -78,12 +80,19 @@ async function* streamFromResponse(response: Response): AsyncGenerator<ChatChunk
         continue;
       }
       if (event.answer) {
-        yield { text: event.answer };
+        if (event.conversation_id) {
+          sessionId = event.conversation_id;
+        }
+        yield { text: event.answer, sessionId };
       }
       if (event.event === "message_end") {
+        if (event.conversation_id) {
+          sessionId = event.conversation_id;
+        }
         yield {
           text: "",
           done: true,
+          sessionId,
           usage: {
             promptTokens: event.metadata?.usage?.prompt_tokens,
             completionTokens: event.metadata?.usage?.completion_tokens

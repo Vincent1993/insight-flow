@@ -1,0 +1,17 @@
+{
+  "name": "@insight-flow/host-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@insight-flow/compute-engine": "workspace:*",
+    "@insight-flow/core": "workspace:*",
+    "@insight-flow/data-cleaner": "workspace:*",
+    "@insight-flow/llm-connectors": "workspace:*",
+    "@insight-flow/protocol": "workspace:*"
+  }
+}

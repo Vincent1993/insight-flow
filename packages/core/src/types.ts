@@ -9,6 +9,25 @@ export interface CreateCoreOptions {
   };
 }
 
+export interface AiReplyInsertion {
+  sessionId: string;
+  reply: string;
+  updatedAt?: number;
+}
+
+export interface ModuleConversationState {
+  sessionId: string;
+  reply: string;
+  updatedAt: number;
+}
+
+export interface ModuleViewPatch extends ModuleConversationState {}
+
+export interface ModuleViewBinding {
+  applyChatPatch?: (patch: ModuleViewPatch) => void;
+  requestDataUpdate?: () => Promise<unknown> | unknown;
+}
+
 export interface InsightCore {
   register(record: InsightRecord): void;
   unregister(identityId: string): void;
@@ -26,4 +45,13 @@ export interface InsightCore {
   setPromptOverride(identityId: string, override: PromptOverride): void;
   clearPromptOverride(identityId: string): void;
   getEffectivePrompt(identityId: string, userInput: string): string;
+
+  bindModuleView(identityId: string, binding: ModuleViewBinding): () => void;
+  insertAiReply(identityId: string, insertion: AiReplyInsertion): void;
+  getConversation(identityId: string): ModuleConversationState | undefined;
+  subscribeConversation(
+    cb: (state: Record<string, ModuleConversationState>) => void
+  ): () => void;
+
+  requestModuleUpdate(identityId: string, nextPayload?: unknown): Promise<void>;
 }
