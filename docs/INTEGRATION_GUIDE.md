@@ -10,6 +10,8 @@
 2. 主界面与侧边栏状态实时同步
 3. 数据在进入分析链路前可执行可插拔清洗
 4. 计算可按数据规模自动切换 JS / Worker / WASM
+5. 选中模块后可在侧边栏发起 Dify Chat
+6. 每个模块支持内置提示词，并允许用户追加或替换
 
 ## 2. 包与职责
 
@@ -19,11 +21,11 @@
 - `@insight-flow/core`：注册、发现、消息总线、调度
 - `@insight-flow/data-cleaner`：数据清洗管线
 - `@insight-flow/compute-engine`：统计计算引擎
+- `@insight-flow/llm-connectors`：Dify Chat 连接器（选中模块即会话）
 
 可选包：
 
 - `@insight-flow/sidebar-ui`：侧边栏 UI 组件
-- `@insight-flow/llm-connectors`：外部 AI 连接器适配
 - `@insight-flow/feishu-client`：飞书能力封装
 
 ## 3. 快速接入（React）
@@ -78,6 +80,12 @@ export function RevenueCard({ data }) {
       identity={{ type: "metric-card", id: "revenue-card" }}
       semantics={{ metric: "revenue", domain: "sales" }}
       stateTrace={{ filters: ["region=APAC"], granularity: "day" }}
+      promptPreset={{
+        system: "你是资深经营分析师，请先基于确定性统计结论再给判断。",
+        task: "分析收入波动的核心驱动，给出可执行建议。",
+        output: "按 1) 结论 2) 证据 3) 建议 格式输出",
+        defaultMode: "append",
+      }}
       payload={data}
     >
       <YourCard data={data} />
@@ -95,6 +103,36 @@ const unsubscribe = insightCore.subscribeSelection((selected) => {
 });
 ```
 
+### 步骤 6：配置 Dify Chat 连接器
+
+```ts
+import { createDifyConnector } from "@insight-flow/llm-connectors/dify";
+
+export const difyChat = createDifyConnector({
+  baseUrl: "https://api.dify.ai/v1",
+  apiKey: process.env.DIFY_API_KEY!,
+  appId: "insight-chat-app-id",
+});
+```
+
+### 步骤 7：发起会话（支持 append / replace）
+
+```ts
+const result = await difyChat.streamChat({
+  identityId: "revenue-card",
+  records: selectedRecords,
+  userInput: "重点解释华东区本周波动",
+  promptMode: "append", // 或 "replace"
+  // 当 promptMode = "replace" 时建议传 overridePrompt
+  // overridePrompt: "你只需输出异常归因，不要给运营建议",
+});
+```
+
+提示词合并规则：
+
+- `append`：`内置提示词 + 用户新增提示词 + 当前会话问题`
+- `replace`：`用户替换提示词 + 当前会话问题`（不使用内置提示词）
+
 ## 4. 非 React 接入（Vanilla）
 
 ```ts
@@ -106,6 +144,11 @@ wrapElement(el, {
   identity: { type: "trend-chart", id: "trend-orders" },
   semantics: { metric: "order_count", domain: "ops" },
   stateTrace: { filters: ["shop_id=1001"] },
+  promptPreset: {
+    system: "你是运营分析顾问，基于趋势变化给出解释。",
+    task: "识别订单趋势转折点并给出原因假设。",
+    defaultMode: "append",
+  },
   payload: chartData,
 });
 ```
@@ -136,6 +179,13 @@ wrapElement(el, {
 - `5k - 100k` 点：Worker
 - `> 100k` 点或高频批量任务：WASM
 
+### 6.3 Prompt 策略
+
+- 建议每个模块都配置业务专属 `promptPreset`
+- 默认模式建议 `append`，防止用户输入过短导致分析失焦
+- 高级用户可切换到 `replace` 完全接管提示词
+- 侧边栏 UI 要明显展示当前模式（Append / Replace）
+
 ## 7. 接入验收清单
 
 - [ ] 组件可被注册并在注册中心可见
@@ -143,6 +193,8 @@ wrapElement(el, {
 - [ ] 清洗前后数据差异可观测（日志或 debug 面板）
 - [ ] 大数据集计算不会阻塞主线程
 - [ ] 脱敏字段在分析链路中不可逆明文外泄
+- [ ] 选中模块后能直接在侧边栏与 Dify 对话
+- [ ] 用户可切换提示词模式（append/replace）且结果符合预期
 
 ## 8. 常见问题
 
@@ -155,3 +207,7 @@ wrapElement(el, {
 
 3. 字段口径不一致？
    - 在 `normalize` 插件统一字段映射规则
+
+4. Chat 回答不贴合业务？
+   - 检查该模块 `promptPreset` 是否完整（system/task/output）
+   - 优先使用 `append` 模式保留业务内置提示词

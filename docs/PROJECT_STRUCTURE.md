@@ -1,16 +1,17 @@
-# InsightFlow 项目结构设计（协议驱动 + 可插拔计算版）
+# InsightFlow 项目结构设计（协议驱动 + 可插拔计算 + Prompt 治理版）
 
-> 目标：构建一个不绑定具体 AI 平台（可不内嵌 Dify）、可发现任意业务组件、可按数据规模切换 JS/Worker/WASM 的工业级分析底座。
+> 目标：构建一个可发现任意业务组件、可按数据规模切换 JS/Worker/WASM、并支持“选中模块即 Chat（Dify）”的工业级分析底座。
 
 ## 1. 结构设计原则（按你的反馈调整）
 
-1. **Core 中立**：核心只做“采集、协议、发现、分发、计算调度”，不内置 Dify。
+1. **Core 中立**：核心只做“采集、协议、发现、分发、计算调度、提示词治理”，不硬编码任何厂商 SDK。
 2. **任意组件可接入**：只要按 InsightSchema 注册，即可被侧边栏或 Chrome 插件发现。
 3. **清洗能力独立**：数据清洗/脱敏/标准化拆分成独立功能包，按需组合。
 4. **计算后端可切换**：默认 JS；大数据量可切 Worker；更高性能可切 WASM。
 5. **协议优先**：`protocol` 独立版本演进，业务实现与协议解耦。
+6. **模块级 Prompt 内建**：每个注册模块都可声明内置分析提示词，侧边栏支持“追加”或“替换”。
 
-## 2. 推荐目录树（去 Dify 内嵌）
+## 2. 推荐目录树（Core 不内嵌 Dify，Connector 对接）
 
 ```text
 insight-flow/
@@ -51,6 +52,10 @@ insight-flow/
 │  │  │  │  ├─ state-bus.ts             # Zustand/PubSub 状态总线
 │  │  │  │  ├─ messenger.ts             # native + postMessage
 │  │  │  │  └─ scheduler.ts             # 计算后端调度器
+│  │  │  ├─ prompt/
+│  │  │  │  ├─ preset.ts                # 模块内置提示词模型
+│  │  │  │  ├─ override.ts              # 用户追加/替换策略
+│  │  │  │  └─ resolver.ts              # 最终提示词合并器
 │  │  │  ├─ wrappers/
 │  │  │  │  ├─ react/
 │  │  │  │  │  └─ InsightItem.tsx       # React 包裹器
@@ -102,10 +107,10 @@ insight-flow/
 │  │  ├─ src/
 │  │  └─ package.json
 │  │
-│  ├─ llm-connectors/                    # 可选：AI 平台连接器（非核心内嵌）
+│  ├─ llm-connectors/                    # AI 平台连接器（核心不耦合，Chat 默认接 Dify）
 │  │  ├─ src/
-│  │  │  ├─ dify/                        # 可选适配器
-│  │  │  ├─ openai/
+│  │  │  ├─ dify/                        # 侧边栏 Chat 默认适配器
+│  │  │  ├─ openai/                      # 可选替代
 │  │  │  └─ custom-http/
 │  │  └─ package.json
 │  │
@@ -136,7 +141,7 @@ insight-flow/
 └─ README.md
 ```
 
-## 3. 核心能力拆分（你提出的三点）
+## 3. 核心能力拆分（按当前要求）
 
 ### 3.1 任意组件可包裹 + 自动发现
 
@@ -179,6 +184,18 @@ insight-flow/
 2. `5k - 100k`：Worker
 3. `> 100k` 或复杂回归批量任务：WASM
 
+### 3.4 选中模块即 Chat（Dify）+ Prompt 可治理
+
+当模块被选中后，侧边栏启动会话并自动带入该模块上下文：
+
+1. 模块注册时提供 `promptPreset`（内置分析提示词）
+2. 用户在侧边栏输入附加意图时，可选择：
+   - `append`：在内置提示词基础上追加
+   - `replace`：完全替换内置提示词
+3. `core/prompt/resolver` 生成最终提示词，再交由 `llm-connectors/dify` 调用 Dify 接口
+
+这样既保留模块专家知识（内置 Prompt），又允许用户临时调整分析方向。
+
 ## 4. 与里程碑映射（更新版）
 
 ### M1（基础底座）
@@ -189,10 +206,11 @@ insight-flow/
 - `packages/sidebar-ui`
 - `apps/host-demo`
 
-### M2（智能能力，但不绑定 Dify）
-- `packages/llm-connectors`（可选接入 Dify/OpenAI/自研）
+### M2（智能能力，Dify 为默认实现且可替换）
+- `packages/llm-connectors/dify`（侧边栏 Chat 默认对接）
 - `packages/sidebar-ui/chat`（Streaming）
 - `packages/data-cleaner/plugins/pii-mask.ts`
+- `packages/core/prompt/*`（提示词追加/替换与合并）
 
 ### M3（飞书闭环）
 - `packages/markdown-block-mapper`
@@ -205,27 +223,30 @@ insight-flow/
 1. `protocol` 是跨端契约源头，严格语义化版本管理。
 2. `core` 只做发现/分发/调度，不内置任何 AI 平台 SDK。
 3. `data-cleaner` 与 `compute-engine` 均可被 `core`、`sidebar-ui`、外部服务单独复用。
-4. `llm-connectors` 是可插拔扩展层，可引入 Dify，但不是主干依赖。
+4. `llm-connectors` 是可插拔扩展层；当前 Chat 主路径使用 `dify` 适配器。
 5. 飞书链路在当前阶段只保留 `packages/feishu-client` 与模板资产；服务端能力后续按需追加。
+6. 每个模块必须支持 `promptPreset`，并允许会话级 `append/replace` 覆盖策略。
 
 ## 6. 第一阶段最小可运行切片（推荐）
 
-先做 5 个模块即可稳定验证：
+先做 6 个模块即可稳定验证：
 
 1. `packages/protocol`
 2. `packages/core`
 3. `packages/data-cleaner`
 4. `packages/compute-engine`（JS + Worker）
 5. `apps/host-demo` + `packages/sidebar-ui`
+6. `packages/llm-connectors`（至少 `dify` 适配器）
 
 完成后就能证明：
 
 - 任意组件按协议注册可被发现
 - 数据清洗可插拔
 - 大数据量下可平滑切换 Worker，不阻塞主线程
+- 选中任意模块后可在侧边栏发起 Dify Chat，且支持追加/替换模块内置 Prompt
 
 ## 7. 文档交付（当前版本）
 
 1. `docs/PROJECT_STRUCTURE.md`：项目结构与里程碑映射
 2. `docs/INTEGRATION_GUIDE.md`：宿主系统与插件接入说明
-3. `docs/API_DESIGN.md`：核心 API、数据清洗与计算引擎接口设计
+3. `docs/API_DESIGN.md`：核心 API、Prompt 策略与 Dify Chat 接口设计

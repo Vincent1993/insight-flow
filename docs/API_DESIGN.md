@@ -8,6 +8,7 @@
 2. 可插拔：清洗、计算、AI 连接器均可替换。
 3. 分层解耦：Core 不依赖具体 AI 厂商与后端实现。
 4. 向后兼容：协议按语义化版本迭代。
+5. 模块级 Prompt：每个注册模块都应声明内置分析提示词。
 
 ## 2. Protocol（核心类型）
 
@@ -41,10 +42,27 @@ export interface EdgeStats {
   outliers?: number[];
 }
 
+export type PromptMode = "append" | "replace";
+
+export interface PromptPreset {
+  system: string;                     // 角色与风格
+  task: string;                       // 该模块默认分析任务
+  output?: string;                    // 输出格式要求
+  constraints?: string[];             // 禁止项/边界
+  variables?: Record<string, string>; // 可注入变量
+  defaultMode?: PromptMode;           // 默认 append
+}
+
+export interface PromptOverride {
+  mode: PromptMode;
+  text: string;                       // 用户追加或替换提示词
+}
+
 export interface InsightRecord {
   identity: Identity;
   semantics: Semantics;
   stateTrace: StateTrace;
+  promptPreset: PromptPreset;
   payload?: unknown;
   edgeStats?: EdgeStats;
   timestamp: number;
@@ -84,6 +102,10 @@ interface InsightCore {
 
   subscribeSelection(cb: (records: InsightRecord[]) => void): () => void;
   subscribeRegistry(cb: (records: InsightRecord[]) => void): () => void;
+
+  setPromptOverride(identityId: string, override: PromptOverride): void;
+  clearPromptOverride(identityId: string): void;
+  getEffectivePrompt(identityId: string, userInput: string): string;
 }
 ```
 
@@ -96,6 +118,7 @@ interface InsightItemProps {
   identity: Identity;
   semantics: Semantics;
   stateTrace?: StateTrace;
+  promptPreset: PromptPreset;
   payload?: unknown;
   edgeStats?: EdgeStats;
   children: React.ReactNode;
@@ -110,6 +133,22 @@ function wrapElement(
   record: Omit<InsightRecord, "timestamp">
 ): () => void; // 返回卸载函数
 ```
+
+### 3.4 Prompt 合并规则
+
+```ts
+function resolvePrompt(params: {
+  preset: PromptPreset;
+  override?: PromptOverride;
+  userInput: string;
+}): string;
+```
+
+规则：
+
+1. `append`：`preset + override.text + userInput`
+2. `replace`：`override.text + userInput`
+3. 无 override：`preset + userInput`
 
 ## 4. Data Cleaner API（@insight-flow/data-cleaner）
 
@@ -187,7 +226,59 @@ interface ComputeEngine {
 }
 ```
 
-## 6. 事件与消息协议
+## 6. Chat Connector API（@insight-flow/llm-connectors）
+
+### 6.1 通用接口
+
+```ts
+interface ChatRequest {
+  identityId: string;
+  records: InsightRecord[];   // 当前选中模块上下文
+  userInput: string;
+  promptMode?: PromptMode;    // append / replace
+  overridePrompt?: string;    // 用户输入提示词（可选）
+}
+
+interface ChatChunk {
+  text: string;
+  done?: boolean;
+  usage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+  };
+}
+
+interface InsightChatConnector {
+  streamChat(req: ChatRequest): AsyncIterable<ChatChunk>;
+}
+```
+
+请求校验建议：
+
+1. `promptMode = "replace"` 时，`overridePrompt` 必填
+2. `records` 至少包含一个当前选中模块
+3. `identityId` 必须存在于 `records` 中
+
+### 6.2 Dify 适配器
+
+```ts
+interface DifyConnectorConfig {
+  baseUrl: string;
+  apiKey: string;
+  appId: string;
+  timeoutMs?: number;
+}
+
+function createDifyConnector(config: DifyConnectorConfig): InsightChatConnector;
+```
+
+说明：
+
+- 侧边栏 Chat 主路径默认使用 Dify 适配器
+- `core` 只产出最终提示词与上下文，不直接调用 Dify SDK
+- 支持流式输出（打字机效果）与用量回传
+
+## 7. 事件与消息协议
 
 推荐事件名（页面与插件统一）：
 
@@ -208,17 +299,27 @@ interface InsightEvent<T = unknown> {
 }
 ```
 
-## 7. 错误码建议
+新增事件建议：
+
+- `insight:prompt-override-changed`
+- `insight:chat-started`
+- `insight:chat-finished`
+
+## 8. 错误码建议
 
 | Code | 含义 | 建议处理 |
 |---|---|---|
 | IF-CORE-001 | 重复 identity.id 注册 | 拒绝并告警 |
 | IF-CORE-002 | record 不符合协议 | 校验失败并丢弃 |
+| IF-PROMPT-001 | 模块缺少 promptPreset | 阻止注册并提示补全 |
+| IF-PROMPT-002 | promptMode 非法 | 回退到 append |
 | IF-CLEAN-001 | 清洗插件执行失败 | 跳过插件并记录日志 |
 | IF-COMPUTE-001 | Worker 初始化失败 | 降级 JS 模式 |
 | IF-COMPUTE-002 | WASM 加载失败 | 降级 Worker/JS |
+| IF-CHAT-001 | Dify 鉴权失败 | 终止请求并提示重配 |
+| IF-CHAT-002 | Dify 流式中断 | 自动重试或回退非流式 |
 
-## 8. 版本与兼容策略
+## 9. 版本与兼容策略
 
 1. `protocol` 独立发布版本（如 `1.x`）。
 2. `core` 主版本需声明支持的 `protocol` 范围（如 `^1.2.0`）。
