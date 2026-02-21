@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "rsbuild dev",
+    "preview": "rsbuild preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsc -p tsconfig.json"
+    "build": "rsbuild build"
   },
   "dependencies": {
     "@insight-flow/compute-engine": "workspace:*",
@@ -13,6 +15,12 @@
     "@insight-flow/data-cleaner": "workspace:*",
     "@insight-flow/fingerprint-cache": "workspace:*",
     "@insight-flow/llm-connectors": "workspace:*",
-    "@insight-flow/protocol": "workspace:*"
+    "@insight-flow/protocol": "workspace:*",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6"
   }
 }

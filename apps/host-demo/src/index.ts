@@ -4,6 +4,7 @@ import { createAdapterRegistry, createPipeline } from "@insight-flow/data-cleane
 import { normalize, piiMask, sanitize } from "@insight-flow/data-cleaner/plugins";
 import {
   createInterpretationCache,
+  createIndexedDbKvStore,
   createMd5Fingerprint,
   createMemoryKvStore,
   type InterpretationCacheLookup
@@ -66,6 +67,20 @@ function createMockConnector(): InsightChatConnector {
   };
 }
 
+function createDefaultInterpretationCache() {
+  const store =
+    typeof indexedDB === "undefined"
+      ? createMemoryKvStore()
+      : createIndexedDbKvStore({
+          dbName: "insight-flow",
+          storeName: "interpretation"
+        });
+
+  return createInterpretationCache(store, {
+    ttlMs: 30 * 60 * 1000
+  });
+}
+
 export class HostDemoRuntime {
   private readonly pageModules = new Map<string, ModuleCard>();
   private readonly adapters = createAdapterRegistry(createDemoAdapters());
@@ -86,9 +101,7 @@ export class HostDemoRuntime {
       workerMaxPoints: 100
     }
   });
-  private readonly interpretationCache = createInterpretationCache(createMemoryKvStore(), {
-    ttlMs: 30 * 60 * 1000
-  });
+  private readonly interpretationCache = createDefaultInterpretationCache();
   private readonly chatConnector: InsightChatConnector;
 
   constructor(chatConnector: InsightChatConnector = createMockConnector()) {

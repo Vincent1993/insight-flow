@@ -283,3 +283,4 @@ insight-flow/
 2. `docs/INTEGRATION_GUIDE.md`：宿主系统与插件接入说明
 3. `docs/API_DESIGN.md`：核心 API、指纹缓存、Prompt 策略与 Dify Chat 接口设计
 4. `docs/POC_V2_REFOCUS_PLAN.md`：V2 POC 阶段聚焦与验收清单
+5. `docs/RSSTACK_SETUP.md`：Rsbuild / Rslib / Rstest / RspressV2 / OXlint 工程说明

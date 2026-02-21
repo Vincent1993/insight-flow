@@ -1,5 +1,7 @@
 # Host Demo
 
+技术栈：React + Rsbuild（Rsstack）
+
 该示例展示以下闭环：
 
 1. 模块注册并被 `core` 发现
@@ -16,10 +18,12 @@
 - `HostDemoRuntime.clickUpdate`：点击更新并重算
 - `HostDemoRuntime.checkInterpretationStatus`：查询缓存命中状态
 
-浏览器挂载示例：`src/browser-demo.ts`
+React 展示层：
 
-- `mountHostDemo(container)`：创建“模块区 + 侧边栏”交互页面
+- `src/App.tsx`：模块列表 + 侧边栏 Chat + 缓存状态展示
+- `src/main.tsx`：React 挂载入口
+- `rsbuild.config.ts`：Rsbuild 构建配置（React 插件）
 
-浏览器入口：
+运行：
 
-- `src/main.ts` + `index.html`
+- `pnpm --filter @insight-flow/host-demo dev`

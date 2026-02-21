@@ -5,10 +5,22 @@
   "description": "InsightFlow protocol-driven analysis foundation",
   "packageManager": "pnpm@10.6.0",
   "scripts": {
+    "dev": "pnpm --filter @insight-flow/host-demo dev",
+    "docs:dev": "pnpm --filter @insight-flow/docs-site dev",
     "typecheck": "pnpm -r --if-present typecheck",
-    "build": "pnpm -r --if-present build"
+    "build": "pnpm -r --if-present build",
+    "test": "rstest --run",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint . --fix",
+    "format": "pnpm lint:fix"
   },
   "devDependencies": {
-    "typescript": "^5.9.2"
+    "@rsbuild/core": "^1.7.3",
+    "@rsbuild/plugin-react": "^1.4.5",
+    "@rslib/core": "^0.19.6",
+    "@rspress/core": "^2.0.3",
+    "@rstest/core": "^0.8.5",
+    "oxlint": "^1.49.0",
+    "typescript": "^5.9.3"
   }
 }
