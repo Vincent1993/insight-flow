@@ -11,6 +11,7 @@
     "@insight-flow/compute-engine": "workspace:*",
     "@insight-flow/core": "workspace:*",
     "@insight-flow/data-cleaner": "workspace:*",
+    "@insight-flow/fingerprint-cache": "workspace:*",
     "@insight-flow/llm-connectors": "workspace:*",
     "@insight-flow/protocol": "workspace:*"
   }

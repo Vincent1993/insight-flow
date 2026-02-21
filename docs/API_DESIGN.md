@@ -43,8 +43,10 @@ export interface EdgeStats {
 }
 
 export type PromptMode = "append" | "replace";
+export type PromptTemplateType = "indicator" | "trend" | "table" | "generic";
 
 export interface PromptPreset {
+  templateType?: PromptTemplateType;     // 分态模板类型
   system: string;                     // 角色与风格
   task: string;                       // 该模块默认分析任务
   output?: string;                    // 输出格式要求
@@ -235,7 +237,43 @@ function createAdapterRegistry(initialAdapters?: DataAdapter[]): AdapterRegistry
 - `piiMask(options)`
 - `dedupe(options)`
 
-## 5. Compute Engine API（@insight-flow/compute-engine）
+## 5. Fingerprint Cache API（@insight-flow/fingerprint-cache）
+
+```ts
+interface InterpretationCacheEntry {
+  moduleId: string;
+  fingerprint: string;
+  sessionId?: string;
+  reply: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+type InterpretationCacheStatus = "hit" | "miss" | "stale";
+
+interface InterpretationCacheLookup {
+  status: InterpretationCacheStatus;
+  currentFingerprint: string;
+  latestFingerprint?: string;
+  entry?: InterpretationCacheEntry;
+}
+
+function createMd5Fingerprint(payload: unknown): string;
+
+function createInterpretationCache(
+  store: AsyncKVStore,
+  options?: { ttlMs?: number }
+): {
+  getStatus(moduleId: string, currentFingerprint: string): Promise<InterpretationCacheLookup>;
+  set(moduleId: string, fingerprint: string, payload: {
+    reply: string;
+    sessionId?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<InterpretationCacheEntry>;
+};
+```
+
+## 6. Compute Engine API（@insight-flow/compute-engine）
 
 ### 5.1 创建引擎
 
@@ -277,7 +315,7 @@ interface ComputeEngine {
 }
 ```
 
-## 6. Chat Connector API（@insight-flow/llm-connectors）
+## 7. Chat Connector API（@insight-flow/llm-connectors）
 
 ### 6.1 通用接口
 
@@ -293,6 +331,7 @@ interface ChatRequest {
 interface ChatChunk {
   text: string;
   done?: boolean;
+  sessionId?: string;
   usage?: {
     promptTokens?: number;
     completionTokens?: number;
@@ -329,7 +368,7 @@ function createDifyConnector(config: DifyConnectorConfig): InsightChatConnector;
 - `core` 只产出最终提示词与上下文，不直接调用 Dify SDK
 - 支持流式输出（打字机效果）与用量回传
 
-## 7. 事件与消息协议
+## 8. 事件与消息协议
 
 推荐事件名（页面与插件统一）：
 
@@ -358,7 +397,7 @@ interface InsightEvent<T = unknown> {
 - `insight:chat-started`
 - `insight:chat-finished`
 
-## 8. 错误码建议
+## 9. 错误码建议
 
 | Code | 含义 | 建议处理 |
 |---|---|---|
@@ -368,13 +407,14 @@ interface InsightEvent<T = unknown> {
 | IF-PROMPT-002 | promptMode 非法 | 回退到 append |
 | IF-ADAPTER-001 | 指定 adapter 不存在 | 终止适配并提示配置错误 |
 | IF-ADAPTER-002 | 输入无法被任何 adapter 处理 | 拒绝注册并提示补充 schema |
+| IF-CACHE-001 | 浏览器环境不支持 indexedDB | 降级 memory store 或提示降级 |
 | IF-CLEAN-001 | 清洗插件执行失败 | 跳过插件并记录日志 |
 | IF-COMPUTE-001 | Worker 初始化失败 | 降级 JS 模式 |
 | IF-COMPUTE-002 | WASM 加载失败 | 降级 Worker/JS |
 | IF-CHAT-001 | Dify 鉴权失败 | 终止请求并提示重配 |
 | IF-CHAT-002 | Dify 流式中断 | 自动重试或回退非流式 |
 
-## 9. 版本与兼容策略
+## 10. 版本与兼容策略
 
 1. `protocol` 独立发布版本（如 `1.x`）。
 2. `core` 主版本需声明支持的 `protocol` 范围（如 `^1.2.0`）。

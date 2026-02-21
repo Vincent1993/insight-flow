@@ -76,11 +76,18 @@ export async function mountHostDemo(container: HTMLElement): Promise<DemoControl
   sendBtn.style.marginTop = "8px";
   sidebar.appendChild(sendBtn);
 
+  const reinterpretBtn = createElement("button", "重新解读");
+  reinterpretBtn.style.marginTop = "8px";
+  reinterpretBtn.style.marginLeft = "8px";
+  reinterpretBtn.style.display = "none";
+  sidebar.appendChild(reinterpretBtn);
+
   root.appendChild(modulePanel);
   root.appendChild(sidebar);
   container.appendChild(root);
 
   let currentSelectedId: string | undefined;
+  let pendingQuestion = "";
   const unsubs: Array<() => void> = [];
 
   const renderModules = (): void => {
@@ -101,6 +108,10 @@ export async function mountHostDemo(container: HTMLElement): Promise<DemoControl
       const points = createElement("div", `数据点: [${module.points.join(", ")}]`);
       const session = createElement("div", `会话ID: ${module.sessionId ?? "-"}`);
       const reply = createElement("div", `AI回复: ${module.aiReply ?? "-"}`);
+      const cacheStatus = createElement("div", "缓存状态: 检查中...");
+      void runtime.checkInterpretationStatus(module.id).then((status) => {
+        cacheStatus.textContent = `缓存状态: ${status.status}`;
+      });
       const updateBtn = createElement("button", "点击更新数据");
       updateBtn.style.marginTop = "6px";
       updateBtn.onclick = async (event) => {
@@ -120,28 +131,49 @@ export async function mountHostDemo(container: HTMLElement): Promise<DemoControl
       card.appendChild(points);
       card.appendChild(session);
       card.appendChild(reply);
+      card.appendChild(cacheStatus);
       card.appendChild(updateBtn);
       moduleList.appendChild(card);
     }
   };
 
-  sendBtn.onclick = async () => {
+  const triggerChat = async (forceReinterpret: boolean): Promise<void> => {
     if (!currentSelectedId) {
       output.textContent = "请先选择一个模块";
       return;
     }
-    const userInput = promptInput.value.trim();
+    const userInput = forceReinterpret ? pendingQuestion : promptInput.value.trim();
     if (!userInput) {
       output.textContent = "请输入问题";
       return;
     }
+    pendingQuestion = userInput;
+
     const result = await runtime.chatOnSelectedModule({
       identityId: currentSelectedId,
       userInput,
-      promptMode: "append"
+      promptMode: "append",
+      forceReinterpret
     });
-    output.textContent = `Session: ${result.sessionId}\n\n${result.reply}`;
+
+    if (result.status === "stale") {
+      output.textContent = result.hint ?? "数据已更新，请重新解读。";
+      reinterpretBtn.style.display = "inline-block";
+      return;
+    }
+
+    reinterpretBtn.style.display = "none";
+    const modeTip = result.status === "cache_hit" ? "[缓存命中]" : "[新生成]";
+    output.textContent = `${modeTip}\nSession: ${result.sessionId ?? "-"}\n\n${result.reply ?? ""}`;
     renderModules();
+  };
+
+  sendBtn.onclick = async () => {
+    await triggerChat(false);
+  };
+
+  reinterpretBtn.onclick = async () => {
+    await triggerChat(true);
   };
 
   unsubs.push(

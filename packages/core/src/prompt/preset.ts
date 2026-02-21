@@ -1,4 +1,5 @@
 import type { PromptPreset } from "@insight-flow/protocol";
+import { mergePromptLayers } from "./library.js";
 
 export function assertPromptPreset(preset: PromptPreset): void {
   if (!preset.system?.trim()) {
@@ -11,8 +12,11 @@ export function assertPromptPreset(preset: PromptPreset): void {
 
 export function normalizePromptPreset(preset: PromptPreset): PromptPreset {
   assertPromptPreset(preset);
+  const layered = mergePromptLayers(preset);
+  const constraints = layered.constraints?.filter((item) => item.trim().length > 0);
   return {
-    ...preset,
-    defaultMode: preset.defaultMode ?? "append"
+    ...layered,
+    constraints,
+    defaultMode: layered.defaultMode ?? "append"
   };
 }

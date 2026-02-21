@@ -1,6 +1,6 @@
-# InsightFlow 项目结构设计（协议驱动 + 可插拔计算 + Prompt 治理版）
+# InsightFlow 项目结构设计（V2.0 POC：指纹缓存 + 联合 Chat）
 
-> 目标：构建一个可发现任意业务组件、可按数据规模切换 JS/Worker/WASM、并支持“选中模块即 Chat（Dify）”的工业级分析底座。
+> 目标：POC 阶段优先完成 **M1 单模块智能解读与指纹缓存**、**M2 多模块聚合叙事与生成式 Chat**，M3 暂列后续扩展。
 
 ## 1. 结构设计原则（按你的反馈调整）
 
@@ -10,6 +10,7 @@
 4. **计算后端可切换**：默认 JS；大数据量可切 Worker；更高性能可切 WASM。
 5. **协议优先**：`protocol` 独立版本演进，业务实现与协议解耦。
 6. **模块级 Prompt 内建**：每个注册模块都可声明内置分析提示词，侧边栏支持“追加”或“替换”。
+7. **指纹缓存优先**：M1 强制接入 `MD5 Fingerprint + IndexedDB`，数据未变不重复消耗 Token。
 
 ## 2. 推荐目录树（Core 不内嵌 Dify，Connector 对接）
 
@@ -92,6 +93,18 @@ insight-flow/
 │  │  │  │  ├─ trend.ts                 # slope/线性回归
 │  │  │  │  └─ outlier.ts               # IQR
 │  │  │  └─ index.ts
+│  │  └─ package.json
+│  │
+│  ├─ fingerprint-cache/                 # 指纹识别与本地缓存（M1 核心）
+│  │  ├─ src/
+│  │  │  ├─ fingerprint/
+│  │  │  │  ├─ stableSerialize.ts
+│  │  │  │  └─ md5.ts
+│  │  │  ├─ cache/
+│  │  │  │  └─ interpretation.ts         # 指纹命中/失效/过期策略
+│  │  │  └─ store/
+│  │  │     ├─ memory.ts
+│  │  │     └─ indexeddb.ts
 │  │  └─ package.json
 │  │
 │  ├─ sidebar-ui/                        # 可复用侧边栏（宿主与插件共用）
@@ -203,6 +216,15 @@ insight-flow/
 
 这样既保留模块专家知识（内置 Prompt），又允许用户临时调整分析方向。
 
+### 3.5 单模块指纹缓存（M1 核心链路）
+
+1. 模块注册后先做边缘统计（均值/斜率/IQR）
+2. 对 payload 生成 `MD5 Fingerprint`
+3. 用户点击 AI 解读时先查本地缓存（IndexedDB）
+   - 命中：直接回显历史结果（毫秒级）
+   - 未命中或过期：调用 Dify 并回写缓存
+   - 指纹不一致：提示“数据已更新，请重新解读”
+
 ## 4. 与里程碑映射（更新版）
 
 ### M1（基础底座）
@@ -210,6 +232,7 @@ insight-flow/
 - `packages/core`
 - `packages/data-cleaner`
 - `packages/compute-engine`（先落 JS 引擎）
+- `packages/fingerprint-cache`（MD5 + IndexedDB）
 - `packages/sidebar-ui`
 - `apps/host-demo`
 
@@ -219,7 +242,7 @@ insight-flow/
 - `packages/data-cleaner/plugins/pii-mask.ts`
 - `packages/core/prompt/*`（提示词追加/替换与合并）
 
-### M3（飞书闭环）
+### M3（后续扩展，非 POC 主目标）
 - `packages/markdown-block-mapper`
 - `packages/feishu-client`
 - `templates/feishu-card`
@@ -236,7 +259,7 @@ insight-flow/
 
 ## 6. 第一阶段最小可运行切片（推荐）
 
-先做 6 个模块即可稳定验证：
+先做 7 个模块即可稳定验证：
 
 1. `packages/protocol`
 2. `packages/core`
@@ -244,16 +267,19 @@ insight-flow/
 4. `packages/compute-engine`（JS + Worker）
 5. `apps/host-demo` + `packages/sidebar-ui`
 6. `packages/llm-connectors`（至少 `dify` 适配器）
+7. `packages/fingerprint-cache`
 
 完成后就能证明：
 
 - 任意组件按协议注册可被发现
 - 数据清洗可插拔
 - 大数据量下可平滑切换 Worker，不阻塞主线程
+- 数据未变时可命中缓存，避免重复 Token 消耗
 - 选中任意模块后可在侧边栏发起 Dify Chat，且支持追加/替换模块内置 Prompt
 
 ## 7. 文档交付（当前版本）
 
 1. `docs/PROJECT_STRUCTURE.md`：项目结构与里程碑映射
 2. `docs/INTEGRATION_GUIDE.md`：宿主系统与插件接入说明
-3. `docs/API_DESIGN.md`：核心 API、Prompt 策略与 Dify Chat 接口设计
+3. `docs/API_DESIGN.md`：核心 API、指纹缓存、Prompt 策略与 Dify Chat 接口设计
+4. `docs/POC_V2_REFOCUS_PLAN.md`：V2 POC 阶段聚焦与验收清单

@@ -13,6 +13,7 @@
 5. 选中模块后可在侧边栏发起 Dify Chat
 6. 每个模块支持内置提示词，并允许用户追加或替换
 7. 异构注入数据可通过 Schema Adapter 自动适配
+8. 基于 MD5 指纹命中缓存，数据未变不重复调用 AI
 
 ## 2. 包与职责
 
@@ -23,6 +24,7 @@
 - `@insight-flow/data-cleaner`：数据清洗管线
 - `@insight-flow/compute-engine`：统计计算引擎
 - `@insight-flow/llm-connectors`：Dify Chat 连接器（选中模块即会话）
+- `@insight-flow/fingerprint-cache`：MD5 指纹 + 本地缓存（IndexedDB/Memory）
 
 可选包：
 
@@ -127,7 +129,25 @@ export const difyChat = createDifyConnector({
 });
 ```
 
-### 步骤 7：发起会话（支持 append / replace）
+### 步骤 7：配置指纹缓存（M1 核心）
+
+```ts
+import {
+  createIndexedDbKvStore,
+  createInterpretationCache,
+  createMd5Fingerprint
+} from "@insight-flow/fingerprint-cache";
+
+const cache = createInterpretationCache(
+  createIndexedDbKvStore({ dbName: "insight-flow", storeName: "interpretation" }),
+  { ttlMs: 30 * 60 * 1000 }
+);
+
+const fingerprint = createMd5Fingerprint(payload);
+const status = await cache.getStatus(identityId, fingerprint);
+```
+
+### 步骤 8：发起会话（支持 append / replace）
 
 ```ts
 const result = await difyChat.streamChat({
@@ -159,6 +179,12 @@ core.insertAiReply(identityId, {
 ```ts
 await core.requestModuleUpdate(identityId, nextPayload);
 ```
+
+缓存命中策略建议：
+
+- `hit`：直接使用缓存回复并回写页面
+- `stale`：提示“数据已更新，请点击重新解读”
+- `miss`：正常调用 Dify，完成后写入缓存
 
 ## 4. 非 React 接入（Vanilla）
 
@@ -225,6 +251,7 @@ wrapElement(el, {
 - [ ] 异构数据至少有一个 Adapter 可成功适配并注册
 - [ ] 会话 sessionId 与 AI 回复可回写到页面模块
 - [ ] 点击“更新”后模块数据与统计量能刷新
+- [ ] 同一数据指纹下重复提问可命中本地缓存
 
 ## 8. 常见问题
 

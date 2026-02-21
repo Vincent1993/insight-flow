@@ -2,8 +2,14 @@ import { createComputeEngine } from "@insight-flow/compute-engine";
 import { createInsightCore, type ModuleConversationState } from "@insight-flow/core";
 import { createAdapterRegistry, createPipeline } from "@insight-flow/data-cleaner";
 import { normalize, piiMask, sanitize } from "@insight-flow/data-cleaner/plugins";
+import {
+  createInterpretationCache,
+  createMd5Fingerprint,
+  createMemoryKvStore,
+  type InterpretationCacheLookup
+} from "@insight-flow/fingerprint-cache";
 import { collectStreamResult, type ChatChunk, type InsightChatConnector } from "@insight-flow/llm-connectors";
-import type { InsightRecord, PromptMode } from "@insight-flow/protocol";
+import type { InsightRecord, PromptMode, PromptTemplateType } from "@insight-flow/protocol";
 import { createDemoAdapters, type AdaptedModuleData } from "./adapters.js";
 
 interface ModuleCard {
@@ -21,12 +27,26 @@ interface ChatInput {
   userInput: string;
   promptMode?: PromptMode;
   overridePrompt?: string;
+  forceReinterpret?: boolean;
+}
+
+type ChatResultStatus = "cache_hit" | "generated" | "stale";
+
+interface ChatResult {
+  status: ChatResultStatus;
+  sessionId?: string;
+  reply?: string;
+  fingerprint: string;
+  hint?: string;
 }
 
 interface RegisterMetadata {
   adapterId?: string;
   schemaId?: string;
   schemaVersion?: string;
+  templateType?: PromptTemplateType;
+  itemType?: string;
+  metric?: string;
 }
 
 function createMockConnector(): InsightChatConnector {
@@ -66,6 +86,9 @@ export class HostDemoRuntime {
       workerMaxPoints: 100
     }
   });
+  private readonly interpretationCache = createInterpretationCache(createMemoryKvStore(), {
+    ttlMs: 30 * 60 * 1000
+  });
   private readonly chatConnector: InsightChatConnector;
 
   constructor(chatConnector: InsightChatConnector = createMockConnector()) {
@@ -77,10 +100,14 @@ export class HostDemoRuntime {
    */
   async registerModule(module: ModuleCard, metadata?: RegisterMetadata): Promise<void> {
     this.pageModules.set(module.id, module);
+    const modulePayload = {
+      title: module.title,
+      points: module.points
+    };
+    const fingerprint = createMd5Fingerprint(modulePayload);
     const cleaned = (await this.cleaner.run(
       {
-        title: module.title,
-        points: module.points,
+        ...modulePayload,
         owner_id: "U-10086"
       },
       {
@@ -94,8 +121,12 @@ export class HostDemoRuntime {
     const outliers = await this.compute.outliers(cleaned.points);
 
     const record: InsightRecord = {
-      identity: { id: module.id, type: "metric-card", page: "home" },
-      semantics: { domain: "sales", metric: "revenue", dimensions: ["region"] },
+      identity: { id: module.id, type: metadata?.itemType ?? "metric-card", page: "home" },
+      semantics: {
+        domain: "sales",
+        metric: metadata?.metric ?? "revenue",
+        dimensions: ["region"]
+      },
       stateTrace: {
         filters: module.filters,
         granularity: "day",
@@ -103,11 +134,13 @@ export class HostDemoRuntime {
           ? {
               adapterId: metadata.adapterId,
               schemaId: metadata.schemaId,
-              schemaVersion: metadata.schemaVersion
+              schemaVersion: metadata.schemaVersion,
+              fingerprint
             }
           : undefined
       },
       promptPreset: {
+        templateType: metadata?.templateType ?? "indicator",
         system: "你是业务分析助手，请先引用确定性统计量再给结论。",
         task: `分析模块 ${module.title} 的指标变化并给出建议。`,
         output: "输出结构：结论 / 证据 / 建议",
@@ -171,7 +204,10 @@ export class HostDemoRuntime {
       {
         adapterId: adapted.adapterId,
         schemaId: adapted.schema.id,
-        schemaVersion: adapted.schema.version
+        schemaVersion: adapted.schema.version,
+        templateType: adapted.schema.id === "trend-rows" ? "trend" : "indicator",
+        itemType: adapted.schema.id === "trend-rows" ? "trend-chart" : "metric-card",
+        metric: adapted.schema.id === "trend-rows" ? "order_count" : "revenue"
       }
     );
   }
@@ -188,6 +224,15 @@ export class HostDemoRuntime {
     return this.core.subscribeConversation(cb);
   }
 
+  async checkInterpretationStatus(identityId: string): Promise<InterpretationCacheLookup> {
+    const record = this.core.get(identityId);
+    if (!record) {
+      throw new Error(`record not found: ${identityId}`);
+    }
+    const fingerprint = createMd5Fingerprint(record.payload ?? {});
+    return this.interpretationCache.getStatus(identityId, fingerprint);
+  }
+
   selectModule(identityId: string): void {
     this.core.select(identityId);
   }
@@ -195,7 +240,37 @@ export class HostDemoRuntime {
   /**
    * 触发侧边栏会话，并把 sessionId + AI 回复反向写回页面模块。
    */
-  async chatOnSelectedModule(input: ChatInput): Promise<{ sessionId: string; reply: string }> {
+  async chatOnSelectedModule(input: ChatInput): Promise<ChatResult> {
+    const currentRecord = this.core.get(input.identityId);
+    if (!currentRecord) {
+      throw new Error(`record not found: ${input.identityId}`);
+    }
+    const fingerprint = createMd5Fingerprint(currentRecord.payload ?? {});
+    const cacheLookup = await this.interpretationCache.getStatus(input.identityId, fingerprint);
+
+    if (!input.forceReinterpret) {
+      if (cacheLookup.status === "hit" && cacheLookup.entry) {
+        this.core.insertAiReply(input.identityId, {
+          sessionId: cacheLookup.entry.sessionId ?? `cache-session-${Date.now()}`,
+          reply: cacheLookup.entry.reply,
+          updatedAt: cacheLookup.entry.createdAt
+        });
+        return {
+          status: "cache_hit",
+          sessionId: cacheLookup.entry.sessionId,
+          reply: cacheLookup.entry.reply,
+          fingerprint
+        };
+      }
+      if (cacheLookup.status === "stale") {
+        return {
+          status: "stale",
+          fingerprint,
+          hint: "数据已更新，请点击重新解读。"
+        };
+      }
+    }
+
     const records = this.core.list();
     const stream = this.chatConnector.streamChat({
       identityId: input.identityId,
@@ -211,10 +286,19 @@ export class HostDemoRuntime {
       sessionId,
       reply: result.reply
     });
+    await this.interpretationCache.set(input.identityId, fingerprint, {
+      sessionId,
+      reply: result.reply,
+      metadata: {
+        source: "dify"
+      }
+    });
 
     return {
+      status: "generated",
       sessionId,
-      reply: result.reply
+      reply: result.reply,
+      fingerprint
     };
   }
 
@@ -229,15 +313,28 @@ export class HostDemoRuntime {
     }
 
     module.points = nextPoints;
-    await this.core.requestModuleUpdate(identityId, {
+    const updatedPayload = {
       title: module.title,
       points: module.points
+    };
+    const nextFingerprint = createMd5Fingerprint(updatedPayload);
+    await this.core.requestModuleUpdate(identityId, {
+      ...updatedPayload
     });
 
     const summary = await this.compute.summarize(nextPoints);
     const trend = await this.compute.trend(nextPoints);
     const outliers = await this.compute.outliers(nextPoints);
+    const currentRecord = this.core.get(identityId);
+    const currentExt = (currentRecord?.stateTrace.ext ?? {}) as Record<string, unknown>;
     this.core.update(identityId, {
+      stateTrace: {
+        ext: {
+          ...currentExt,
+          fingerprint: nextFingerprint,
+          updatedAt: Date.now()
+        }
+      },
       edgeStats: {
         mean: summary.mean,
         min: summary.min,

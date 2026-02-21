@@ -1,6 +1,11 @@
 export type PromptMode = "append" | "replace";
+export type PromptTemplateType = "indicator" | "trend" | "table" | "generic";
 
 export interface PromptPreset {
+  /**
+   * 内置模板类型，用于分层提示词注入。
+   */
+  templateType?: PromptTemplateType;
   /**
    * 角色与风格设定。
    */

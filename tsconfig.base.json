@@ -31,6 +31,12 @@
       ],
       "@insight-flow/compute-engine/*": [
         "packages/compute-engine/src/*"
+      ],
+      "@insight-flow/fingerprint-cache": [
+        "packages/fingerprint-cache/src/index.ts"
+      ],
+      "@insight-flow/fingerprint-cache/*": [
+        "packages/fingerprint-cache/src/*"
       ]
     },
     "strict": true,
