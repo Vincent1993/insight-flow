@@ -9,7 +9,7 @@
     "docs:dev": "pnpm --filter @insight-flow/docs-site dev",
     "typecheck": "pnpm -r --if-present typecheck",
     "build": "pnpm -r --if-present build",
-    "test": "rstest --run",
+    "test": "rstest run",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
     "format": "pnpm lint:fix"
